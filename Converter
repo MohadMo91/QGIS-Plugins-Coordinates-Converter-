@@ -1,0 +1,313 @@
+
+import processing
+from PyQt5 import uic
+from PyQt5.QtWidgets import QDialog, QFileDialog, QTableWidgetItem, QComboBox
+from PyQt5.QtCore import QVariant
+from qgis.gui import QgsMessageBar
+from qgis.core import (Qgis,
+                       QgsField,
+                       QgsProject,
+                       QgsVectorLayer,
+                       QgsCoordinateReferenceSystem,
+                       QgsCoordinateTransform,
+                       QgsPointXY,
+                       QgsFeature,
+                       QgsGeometry,
+                       QgsVectorFileWriter,
+                       QgsWkbTypes)
+from qgis.utils import iface
+
+from .Tools import ShowOutput
+
+
+import psycopg2
+import os
+import pandas as pd
+import geopy.distance
+from pyproj import Proj, transform
+import re
+
+
+Baden_Wrttemberg={'Dezimal   -EPSG:4326 ': {'Links': 7.5117460000000005, 'Rechts': 10.495573, 'Unten': 47.532478999999995, 'Oben': 49.791328}, 'UTM zn 31N-EPSG:5554 ': {'Links': 839554.6132186062, 'Rechts': 1039248.7088653005, 'Unten': 5274210.97535599, 'Oben': 5542438.810012573}, 'UTM zn 32N-EPSG:25832': {'Links': 387984.7268896732, 'Rechts': 607644.5274452107, 'Unten': 5265412.593145597, 'Oben': 5516503.051052708}, 'UTM zn 33N-EPSG:25833': {'Links': -63474.426935755524, 'Rechts': 175841.32321045874, 'Unten': 5291575.61652591, 'Oben': 5525170.454728453}, 'GKR zone 2-EPSG:31466': {'Links': 2613874.357339894, 'Rechts': 2823694.6849586167, 'Unten': 5267114.908950847, 'Oben': 5526906.5929481285}, 'GKR zone 3-EPSG:31467': {'Links': 3388016.5054194024, 'Rechts': 3607762.439359222, 'Unten': 5267078.3839135915, 'Oben': 5518271.504557886}, 'GKR zone 4-EPSG:31468': {'Links': 4162185.6702396106, 'Rechts': 4391781.021053636, 'Unten': 5275774.17369497, 'Oben': 5518280.634660229}, 'GKR zone 5-EPSG:31469': {'Links': 4936439.020888168, 'Rechts': 5175848.984702588, 'Unten': 5293243.871438208, 'Oben': 5526934.021041644}}
+Bayern={'Dezimal   -EPSG:4326 ': {'Links': 8.97635, 'Rechts': 13.839637, 'Unten': 47.270111, 'Oben': 50.564714}, 'UTM zn 31N-EPSG:5554 ': {'Links': 951995.4286488985, 'Rechts': 1266802.361647015, 'Unten': 5252527.544790042, 'Oben': 5657747.58220074}, 'UTM zn 32N-EPSG:25832': {'Links': 498211.07663514325, 'Rechts': 842684.2797795624, 'Unten': 5235181.5481696725, 'Oben': 5612611.332822987}, 'UTM zn 33N-EPSG:25833': {'Links': 44428.30626670487, 'Rechts': 417819.40433619, 'Unten': 5252803.656276559, 'Oben': 5602064.013666326}, 'GKR zone 2-EPSG:31466': {'Links': 2725263.87756812, 'Rechts': 3055162.4903124417, 'Unten': 5241137.053324856, 'Oben': 5632643.839825959}, 'GKR zone 3-EPSG:31467': {'Links': 3498287.3935789946, 'Rechts': 3842895.6622842513, 'Unten': 5236836.065788268, 'Oben': 5614420.544111472}, 'GKR zone 4-EPSG:31468': {'Links': 4271311.278094947, 'Rechts': 4630444.05383442, 'Unten': 5241268.90081585, 'Oben': 5604838.5073832115}, 'GKR zone 5-EPSG:31469': {'Links': 5044385.292331971, 'Rechts': 5417923.331879882, 'Unten': 5254457.116938956, 'Oben': 5603860.274460357}}
+Berlin={'Dezimal   -EPSG:4326 ': {'Links': 13.088348, 'Rechts': 13.761154000000001, 'Unten': 52.338245, 'Oben': 52.675475}, 'UTM zn 31N-EPSG:5554 ': {'Links': 1186424.7368328169, 'Rechts': 1226436.059106851, 'Unten': 5846716.588112884, 'Oben': 5890698.290933997}, 'UTM zn 32N-EPSG:25832': {'Links': 778487.1826643087, 'Rechts': 821815.3011288478, 'Unten': 5806531.173739122, 'Oben': 5846814.320435847}, 'UTM zn 33N-EPSG:25833': {'Links': 369761.5644792061, 'Rechts': 416240.26836681576, 'Unten': 5800380.109836771, 'Oben': 5836890.923306177}, 'GKR zone 2-EPSG:31466': {'Links': 2982862.723518323, 'Rechts': 3024573.0014769738, 'Unten': 5824241.7276700325, 'Oben': 5866398.36145689}, 'GKR zone 3-EPSG:31467': {'Links': 3778670.908109192, 'Rechts': 3822015.981729682, 'Unten': 5808417.5436174, 'Oben': 5848717.26565297}, 'GKR zone 4-EPSG:31468': {'Links': 4574283.565895352, 'Rechts': 4619222.108029038, 'Unten': 5801097.055887692, 'Oben': 5839521.662974443}, 'GKR zone 5-EPSG:31469': {'Links': 5369844.621001598, 'Rechts': 5416341.587180508, 'Unten': 5802255.293574729, 'Oben': 5838781.087185745}}
+Brandenburg={'Dezimal   -EPSG:4326 ': {'Links': 11.26872, 'Rechts': 14.765748, 'Unten': 51.359064000000004, 'Oben': 53.559118999999995}, 'UTM zn 31N-EPSG:5554 ': {'Links': 1075278.472134396, 'Rechts': 1277721.933713315, 'Unten': 5722279.469108107, 'Oben': 5999098.628421092}, 'UTM zn 32N-EPSG:25832': {'Links': 657954.2502374777, 'Rechts': 881734.0872877536, 'Unten': 5692198.562977202, 'Oben': 5949944.805483357}, 'UTM zn 33N-EPSG:25833': {'Links': 240243.94804949444, 'Rechts': 484483.1136656829, 'Unten': 5696365.946086087, 'Oben': 5934496.360904315}, 'GKR zone 2-EPSG:31466': {'Links': 2866917.759248802, 'Rechts': 3080243.0570914024, 'Unten': 5704788.388184488, 'Oben': 5972236.658116995}, 'GKR zone 3-EPSG:31467': {'Links': 3658090.7613642067, 'Rechts': 3881957.6900319564, 'Unten': 5694037.953686584, 'Oben': 5951889.6767962575}, 'GKR zone 4-EPSG:31468': {'Links': 4449168.087130569, 'Rechts': 4683358.534906675, 'Unten': 5691844.027030258, 'Oben': 5939964.987849993}, 'GKR zone 5-EPSG:31469': {'Links': 5240276.070610945, 'Rechts': 5484610.832833329, 'Unten': 5698198.507797974, 'Oben': 5936426.0994588435}}
+Bremen={'Dezimal   -EPSG:4326 ': {'Links': 8.481593, 'Rechts': 8.990582, 'Unten': 53.011037, 'Oben': '53.610186'}, 'UTM zn 31N-EPSG:5554 ': {'Links': 867622.7644487114, 'Rechts': 896124.9166895954, 'Unten': 5887563.36553108, 'Oben': '5956848.511579039'}, 'UTM zn 32N-EPSG:25832': {'Links': 465218.51666738297, 'Rechts': 499376.9013283946, 'Unten': 5873623.988837533, 'Oben': '5940152.227160553'}, 'UTM zn 33N-EPSG:25833': {'Links': 62920.31407494535, 'Rechts': 102630.92250748881, 'Unten': 5893394.596746129, 'Oben': '5956953.779540007'}, 'GKR zone 2-EPSG:31466': {'Links': 2666590.443726489, 'Rechts': 2697950.056564351, 'Unten': 5878292.66882625, 'Oben': '5946251.253853864'}, 'GKR zone 3-EPSG:31467': {'Links': 3465276.21876562, 'Rechts': 3499447.669514126, 'Unten': 5875534.287584305, 'Oben': '5942089.428322368'}, 'GKR zone 4-EPSG:31468': {'Links': 4263988.262015319, 'Rechts': 4300945.730641689, 'Unten': 5881198.820545461, 'Oben': '5946297.839673192'}, 'GKR zone 5-EPSG:31469': {'Links': 5062880.120029945, 'Rechts': 5102606.10902759, 'Unten': 5895304.538319058, 'Oben': '5958889.36905866'}}
+Hamburg={'Dezimal   -EPSG:4326 ': {'Links': 8.105328, 'Rechts': 10.325194999999999, 'Unten': 53.395112, 'Oben': 54.02768199999999}, 'UTM zn 31N-EPSG:5554 ': {'Links': 839354.5217988433, 'Rechts': 979437.1870300376, 'Unten': 5928375.822865626, 'Oben': 6011462.21933734}, 'UTM zn 32N-EPSG:25832': {'Links': 440508.4869782129, 'Rechts': 586805.893135285, 'Unten': 5916597.828507562, 'Oben': 5987414.073865681}, 'UTM zn 33N-EPSG:25833': {'Links': 41852.29132300388, 'Rechts': 193877.38180497513, 'Unten': 5938399.5776003925, 'Oben': 5996717.958213064}, 'GKR zone 2-EPSG:31466': {'Links': 2640082.6679442883, 'Rechts': 2783395.161512486, 'Unten': 5920220.292510359, 'Oben': 5997223.184614668}, 'GKR zone 3-EPSG:31467': {'Links': 3440555.93394212, 'Rechts': 3586911.1662663007, 'Unten': 5918525.093656576, 'Oben': 5989370.968399348}, 'GKR zone 4-EPSG:31468': {'Links': 4241076.28328992, 'Rechts': 4390353.265319967, 'Unten': 5925220.481255382, 'Oben': 5989852.798212973}, 'GKR zone 5-EPSG:31469': {'Links': 5041803.369067592, 'Rechts': 5193888.653815782, 'Unten': 5940327.32608681, 'Oben': 5998670.094356357}}
+Hessen={'Dezimal   -EPSG:4326 ': {'Links': 7.772406, 'Rechts': 10.236486, 'Unten': 49.395261, 'Oben': 51.657817}, 'UTM zn 31N-EPSG:5554 ': {'Links': 846234.1603690553, 'Rechts': 1000259.0050142668, 'Unten': 5482355.988671684, 'Oben': 5747817.230398137}, 'UTM zn 32N-EPSG:25832': {'Links': 410924.3602061696, 'Rechts': 585529.6008526965, 'Unten': 5472121.115386386, 'Oben': 5723704.654208877}, 'UTM zn 33N-EPSG:25833': {'Links': -24234.23635326466, 'Rechts': 170582.15190736088, 'Unten': 5496561.905113129, 'Oben': 5733732.028669134}, 'GKR zone 2-EPSG:31466': {'Links': 2628701.3505116655, 'Rechts': 2793146.590101476, 'Unten': 5474658.68624488, 'Oben': 5733340.246082618}, 'GKR zone 3-EPSG:31467': {'Links': 3410963.6991687263, 'Rechts': 3585636.7979751583, 'Unten': 5473870.094450049, 'Oben': 5725556.01061297}, 'GKR zone 4-EPSG:31468': {'Links': 4193263.3049744186, 'Rechts': 4378072.926650959, 'Unten': 5481743.57847624, 'Oben': 5726301.363542176}, 'GKR zone 5-EPSG:31469': {'Links': 4975693.522541825, 'Rechts': 5170586.13789988, 'Unten': 5498312.572864551, 'Oben': 5735578.99431497}}
+Mecklenburg_Vorpommern={'Dezimal   -EPSG:4326 ': {'Links': 10.59383, 'Rechts': 14.412220999999999, 'Unten': 53.109840000000005, 'Oben': 54.68510500000001}, 'UTM zn 31N-EPSG:5554 ': {'Links': 1007911.9856331308, 'Rechts': 1234090.0122994212, 'Unten': 5911477.412882, 'Oben': 6119738.279446917}, 'UTM zn 32N-EPSG:25832': {'Links': 606687.0381163346, 'Rechts': 848745.5337998045, 'Unten': 5885676.362798876, 'Oben': 6073208.3638630025}, 'UTM zn 33N-EPSG:25833': {'Links': 205132.4991957412, 'Rechts': 462106.9702822778, 'Unten': 5893565.132712406, 'Oben': 6059909.736519832}, 'GKR zone 2-EPSG:31466': {'Links': 2807581.4616372567, 'Rechts': 3041926.863411352, 'Unten': 5896277.544967441, 'Oben': 6094300.390753337}, 'GKR zone 3-EPSG:31467': {'Links': 3606801.216509842, 'Rechts': 3848954.619330005, 'Unten': 5887592.764691285, 'Oben': 6075202.189294501}, 'GKR zone 4-EPSG:31468': {'Links': 4405939.096826878, 'Rechts': 4655660.598631002, 'Unten': 5887325.93645479, 'Oben': 6064408.399037449}, 'GKR zone 5-EPSG:31469': {'Links': 5205149.060971944, 'Rechts': 5462224.641727278, 'Unten': 5895476.205968472, 'Oben': 6061889.304224205}}
+Niedersachsen={'Dezimal   -EPSG:4326 ': {'Links': 6.346001, 'Rechts': 11.598118, 'Unten': 51.292415999999996, 'Oben': 54.138727}, 'UTM zn 31N-EPSG:5554 ': {'Links': 733279.8397100931, 'Rechts': 1061060.3501382458, 'Unten': 5687661.608513483, 'Oben': 6033183.028199941}, 'UTM zn 32N-EPSG:25832': {'Links': 314957.3530796112, 'Rechts': 669720.4953349901, 'Unten': 5685688.86198037, 'Oben': 6002076.18204451}, 'UTM zn 33N-EPSG:25833': {'Links': -102916.82303877793, 'Rechts': 277791.1740499302, 'Unten': 5717995.900088669, 'Oben': 6004305.561860569}, 'GKR zone 2-EPSG:31466': {'Links': 2524177.182109793, 'Rechts': 2865734.936958077, 'Unten': 5684235.111868538, 'Oben': 6015419.747920968}, 'GKR zone 3-EPSG:31467': {'Links': 3314956.494269692, 'Rechts': 3669858.762443846, 'Unten': 5687522.685203596, 'Oben': 6004039.7342618285}, 'GKR zone 4-EPSG:31468': {'Links': 4105846.7976137456, 'Rechts': 4473836.054757418, 'Unten': 5699374.587959052, 'Oben': 6000989.912457597}, 'GKR zone 5-EPSG:31469': {'Links': 4896977.952300418, 'Rechts': 5277835.842055561, 'Unten': 5719834.635088808, 'Oben': 6006261.388968272}}
+Nordrhein_Westfalen={'Dezimal   -EPSG:4326 ': {'Links': 5.866315, 'Rechts': 9.461742, 'Unten': 50.322567, 'Oben': 52.531493000000005}, 'UTM zn 31N-EPSG:5554 ': {'Links': 704027.0541217073, 'Rechts': 938086.904534142, 'Unten': 5578425.504589752, 'Oben': 5839798.224064713}, 'UTM zn 32N-EPSG:25832': {'Links': 276944.64434304263, 'Rechts': 531321.9746883346, 'Unten': 5579193.0280367965, 'Oben': 5820255.228012394}, 'UTM zn 33N-EPSG:25833': {'Links': -149677.527570648, 'Rechts': 124467.09688980348, 'Unten': 5614505.813762023, 'Oben': 5834579.834956014}, 'GKR zone 2-EPSG:31466': {'Links': 2490522.276826988, 'Rechts': 2734923.1080210586, 'Unten': 5576295.971068536, 'Oben': 5827681.731046802}, 'GKR zone 3-EPSG:31467': {'Links': 3276929.398352825, 'Rechts': 3531406.595898176, 'Unten': 5580983.880306536, 'Oben': 5822144.76092664}, 'GKR zone 4-EPSG:31468': {'Links': 4063450.266611068, 'Rechts': 4327867.71746018, 'Unten': 5594301.883873973, 'Oben': 5825069.821456992}, 'GKR zone 5-EPSG:31469': {'Links': 4850199.2257350385, 'Rechts': 5124451.9029365815, 'Unten': 5616302.849147548, 'Oben': 5836466.7466426315}}
+Rheinland_Pfalz={'Dezimal   -EPSG:4326 ': {'Links': 6.112248999999999, 'Rechts': 8.508313000000001, 'Unten': 48.966446999999995, 'Oben': 50.942326}, 'UTM zn 31N-EPSG:5554 ': {'Links': 727775.2458384543, 'Rechts': 886872.0780170109, 'Unten': 5428394.464457291, 'Oben': 5657871.894241229}, 'UTM zn 32N-EPSG:25832': {'Links': 288653.03336162155, 'Rechts': 465455.8522365925, 'Unten': 5427745.010365445, 'Oben': 5643526.450194333}, 'UTM zn 33N-EPSG:25833': {'Links': -150142.24944668903, 'Rechts': 44118.359807095076, 'Unten': 5461906.056422115, 'Oben': 5663504.266251205}, 'GKR zone 2-EPSG:31466': {'Links': 2508262.906833781, 'Rechts': 2676326.568597766, 'Unten': 5425462.821752529, 'Oben': 5648229.090645375}, 'GKR zone 3-EPSG:31467': {'Links': 3288643.6608503843, 'Rechts': 3465515.6357618887, 'Unten': 5429475.21194407, 'Oben': 5645344.6243508225}, 'GKR zone 4-EPSG:31468': {'Links': 4069104.89685092, 'Rechts': 4254724.149435738, 'Unten': 5442183.128955908, 'Oben': 5651035.113509999}, 'GKR zone 5-EPSG:31469': {'Links': 4849735.318156373, 'Rechts': 5044072.300026251, 'Unten': 5463641.992776056, 'Oben': 5665322.224255097}}
+Saarland={'Dezimal   -EPSG:4326 ': {'Links': 6.356483, 'Rechts': 7.404831, 'Unten': 49.111961, 'Oben': 49.639427000000005}, 'UTM zn 31N-EPSG:5554 ': {'Links': 744930.9516372173, 'Rechts': 817985.6058739814, 'Unten': 5445328.620229548, 'Oben': 5507864.147915176}, 'UTM zn 32N-EPSG:25832': {'Links': 307089.98023043736, 'Rechts': 384828.5571879603, 'Unten': 5443267.533220964, 'Oben': 5499763.591339213}, 'UTM zn 33N-EPSG:25833': {'Links': -130442.37745278528, 'Rechts': -48122.11315075005, 'Unten': 5475979.7363301655, 'Oben': 5526299.540352325}, 'GKR zone 2-EPSG:31466': {'Links': 2526069.7796806293, 'Rechts': 2601513.479405195, 'Unten': 5441700.813522532, 'Oben': 5501251.495704675}, 'GKR zone 3-EPSG:31467': {'Links': 3307087.88514812, 'Rechts': 3384857.20229488, 'Unten': 5445004.1070475085, 'Oben': 5501523.449891381}, 'GKR zone 4-EPSG:31468': {'Links': 4088182.0006813225, 'Rechts': 4168251.825284126, 'Unten': 5456993.715075402, 'Oben': 5510447.849143614}, 'GKR zone 5-EPSG:31469': {'Links': 4869442.987684049, 'Rechts': 4951795.876393913, 'Unten': 5477721.4404419465, 'Oben': 5528061.950648073}}
+Sachsen={'Dezimal   -EPSG:4326 ': {'Links': 11.872254, 'Rechts': 15.041932000000001, 'Unten': 50.171325, 'Oben': 51.684754999999996}, 'UTM zn 31N-EPSG:5554 ': {'Links': 1133124.5724119595, 'Rechts': 1331025.2965499489, 'Unten': 5595462.993152661, 'Oben': 5794946.464479103}, 'UTM zn 32N-EPSG:25832': {'Links': 705098.2467349748, 'Rechts': 917509.5567677831, 'Unten': 5561629.152264006, 'Oben': 5743277.2397509385}, 'UTM zn 33N-EPSG:25833': {'Links': 276661.0231910375, 'Rechts': 502898.8312335962, 'Unten': 5562363.294579965, 'Oben': 5725977.543116507}, 'GKR zone 2-EPSG:31466': {'Links': 2919428.554998844, 'Rechts': 3124768.0953438883, 'Unten': 5575999.2246861085, 'Oben': 5766655.044274472}, 'GKR zone 3-EPSG:31467': {'Links': 3705254.872634474, 'Rechts': 3917749.665422701, 'Unten': 5563416.594907459, 'Oben': 5745139.651815297}, 'GKR zone 4-EPSG:31468': {'Links': 4490979.602052841, 'Rechts': 4710459.790143798, 'Unten': 5559469.661620672, 'Oben': 5732211.449069719}, 'GKR zone 5-EPSG:31469': {'Links': 5276708.762506393, 'Rechts': 5503035.7502068, 'Unten': 5564142.524186497, 'Oben': 5727824.116167773}}
+Sachsen_Anhalt={'Dezimal   -EPSG:4326 ': {'Links': 10.560813000000001, 'Rechts': 13.186882, 'Unten': 50.937851, 'Oben': 53.041692000000005}, 'UTM zn 31N-EPSG:5554 ': {'Links': 1030927.71895259, 'Rechts': 1181975.21258123, 'Unten': 5670185.197315792, 'Oben': 5925574.418654516}, 'UTM zn 32N-EPSG:25832': {'Links': 609665.0916754692, 'Rechts': 780643.2631683687, 'Unten': 5644073.662097426, 'Oben': 5885108.429630352}, 'UTM zn 33N-EPSG:25833': {'Links': 188152.263896977, 'Rechts': 378443.82784290216, 'Unten': 5652302.425927659, 'Oben': 5878445.52658622}, 'GKR zone 2-EPSG:31466': {'Links': 2820558.6171301208, 'Rechts': 2981730.0686115213, 'Unten': 5654650.000489758, 'Oben': 5903020.802887525}, 'GKR zone 3-EPSG:31467': {'Links': 3609782.6805861923, 'Rechts': 3780827.0665416433, 'Unten': 5645893.316601687, 'Oben': 5887026.295250392}, 'GKR zone 4-EPSG:31468': {'Links': 4398944.772611521, 'Rechts': 4579708.664657543, 'Unten': 5645715.863247511, 'Oben': 5879478.103362378}, 'GKR zone 5-EPSG:31469': {'Links': 5188163.892535066, 'Rechts': 5378529.698255913, 'Unten': 5654116.963975014, 'Oben': 5880351.96705875}}
+Schleswig_Holstein={'Dezimal   -EPSG:4326 ': {'Links': 7.8647089999999995, 'Rechts': 11.312861999999999, 'Unten': 53.359811, 'Oben': 55.058351}, 'UTM zn 31N-EPSG:5554 ': {'Links': 823639.8377984972, 'Rechts': 1030344.3289507624, 'Unten': 5923333.584360214, 'Oben': 6132914.506342068}, 'UTM zn 32N-EPSG:25832': {'Links': 424446.52750291704, 'Rechts': 647721.817870516, 'Unten': 5912898.404864782, 'Oben': 6103729.3257247005}, 'UTM zn 33N-EPSG:25833': {'Links': 25493.3977440655, 'Rechts': 264537.5008717168, 'Unten': 5936058.330339513, 'Oben': 6107498.838654848}, 'GKR zone 2-EPSG:31466': {'Links': 2624181.4959741, 'Rechts': 2839368.3162370464, 'Unten': 5915846.696070466, 'Oben': 6116202.0770778125}, 'GKR zone 3-EPSG:31467': {'Links': 3424487.5863605044, 'Rechts': 3647850.2963750856, 'Unten': 5914824.051861432, 'Oben': 6105733.26402212}, 'GKR zone 4-EPSG:31468': {'Links': 4224853.258807081, 'Rechts': 4456192.514395753, 'Unten': 5922195.81510996, 'Oben': 6103499.782378783}, 'GKR zone 5-EPSG:31469': {'Links': 5025437.966221272, 'Rechts': 5264576.050354575, 'Unten': 5937985.0289653735, 'Oben': 6109495.679219332}}
+Thueringen={'Dezimal   -EPSG:4326 ': {'Links': 9.876719, 'Rechts': 12.653917999999999, 'Unten': 50.204347, 'Oben': 51.648942}, 'UTM zn 31N-EPSG:5554 ': {'Links': 990527.9927625582, 'Rechts': 1167180.3428663318, 'Unten': 5584018.384355328, 'Oben': 5766258.981871531}, 'UTM zn 32N-EPSG:25832': {'Links': 562564.7250386829, 'Rechts': 752761.5310193362, 'Unten': 5561719.13021775, 'Oben': 5728318.105604777}, 'UTM zn 33N-EPSG:25833': {'Links': 134476.18084957305, 'Rechts': 337693.7836013194, 'Unten': 5573922.900253855, 'Oben': 5724600.308877792}, 'GKR zone 2-EPSG:31466': {'Links': 2776769.360516, 'Rechts': 2960346.084840254, 'Unten': 5570337.914557415, 'Oben': 5744851.437319979}, 'GKR zone 3-EPSG:31467': {'Links': 3562664.151477828, 'Rechts': 3752935.710491503, 'Unten': 5563505.335239088, 'Oben': 5730172.8734394135}, 'GKR zone 4-EPSG:31468': {'Links': 4348527.943610735, 'Rechts': 4545364.472076012, 'Unten': 5565292.193995342, 'Oben': 5724044.741076989}, 'GKR zone 5-EPSG:31469': {'Links': 5134466.920885488, 'Rechts': 5337764.6463601235, 'Unten': 5575705.674671393, 'Oben': 5726444.937025143}}
+
+Bundesland_list = ['Baden_Wuerttemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen', 'Hamburg', 'Hessen',
+                   'Mecklenburg_Vorpommern', 'Niedersachsen',
+                   'Nordrhein_Westfalen', 'Rheinland_Pfalz', 'Saarland', 'Sachsen', 'Sachsen_Anhalt',
+                   'Schleswig_Holstein', 'Thueringen']
+
+pluginPath = os.path.dirname(__file__)
+WIDGET, BASE = uic.loadUiType(os.path.join(pluginPath, 'ui', 'Koordinaten_Konverter_dialog_base.ui'))
+class Koordinaten_Konverter(BASE, WIDGET):
+
+    file = 'Geokoordinaten_ermitteln.xlsx'
+    x = 'East'
+    y = 'North'
+    xy = ''
+    plz = 'PLZ'
+    dfAdresslist = pd.DataFrame()
+    formatsdict = dict() #'f_name':'f_distance'
+    final_format = ''
+    EstCrd = list()
+    NrhCrd = list()
+
+    def __init__(self, iface, parent=None):
+        super().__init__(parent)
+        self.setupUi(self)
+        self.iface = iface
+
+        # Connect dialog buttons
+        self.Input_Button.clicked.connect(self.openExcel)
+        self.Start_Button.clicked.connect(self.Run)
+        self.Output_Button.clicked.connect(self.SaveList)
+        self.Output_Button.clicked.connect(self.SaveList)
+        self.Close_Button.clicked.connenct(self.Cancel)
+
+
+    """ OPEN EXCEL LIST """
+    def openExcel(self):
+        """Browse for input file."""
+        filename = QFileDialog.getOpenFileName(self, 'Adressliste öffnen', QgsProject.instance().homePath(), 'Excel File (*.xlsx)')
+        if not filename[0]:
+            return
+        #layer = QgsVectorLayer(filename[0], filename[0], 'ogr')
+        data = pd.read_excel(filename)
+        self.dfAdresslist = self.dfAdresslist.append(data, sort=False)
+        cols=list(self.dfAdresslist.columns)
+
+        #https: // doc.qt.io / qtforpython / PySide2 / QtWidgets / QComboBox.html
+        if self.dfAdresslist:
+            self.Bundesland_comboBox.addItem(self.Bundesland_list)#may be for loop!!
+            self.X_comboBox.addItem(cols)
+            self.x = self.X_comboBox
+            self.Y_comboBox.addItem(cols)
+            self.y=self.Y_comboBox
+            self.X_Y_comboBox.addItem(cols)
+            self.xy=self.X_Y_comboBox
+            """ If X and Y were in one Column, Split them !!!! """
+            try:
+                # Therefor X and Y should be code filled:
+                # print(dfAdresslist['xy'])
+                x_list = list()
+                y_list = list()
+                if self.xy:
+                    for ele in self.dfAdresslist[self.xy]:  # read the combined column
+                        self.xy = re.sub("[a-zA-Z()<>_]", '', ele)  # delete everything except the numbers
+                        # xy = re.sub(" ","",xy,1)#delete the first space
+                        self.xy = re.split("\s", self.xy)  # split x and y in list
+                        if len(self.xy) >= 3 and self.xy[0] == "":  # delete the first space IF existed
+                            self.xy.pop(0)
+                        x_list.append(self.xy[0])
+                        y_list.append(self.xy[1])
+                    self.dfAdresslist[self.x] = x_list  # Create new columns (seperated)
+                    self.dfAdresslist[self.y] = y_list
+            except EnvironmentError as err:
+                print(err)
+
+            # Due the huge amount of Data in DB, the program adds only the matched/used PLZ
+            try:
+                self.plz = self.dfAdresslist[self.plz].astype(str)
+                self.plz = list(dict.fromkeys((self.plz)))  # save unique PLZ
+                self.plz = [str(e) for e in self.plz]  # convert to string
+                for p in range(0, len(
+                        self.plz)):  # due the deletion of 0 at the beginning(float). Add 0 to insert correct  plz in sql query
+                    if len(self.plz[p]) == 4:
+                        self.plz[p] = '0' + self.plz[p]
+                plz = str(self.plz).strip('[]')  # delete brackets, to be read by SQL-Query
+            except EnvironmentError as err:
+                print(err, " Adressliste has no PLZ!")
+        else:
+            self.iface.messageBar().pushMessage("Info", "Wählen Sie alle Spalten aus!", level=Qgis.Info)
+        self.Run()
+        return filename
+
+    def Run(self):
+        """ Find out the Coordinates System """
+        # select 10% of rows randomly to check. Save them in new DataFrame !
+        df2 = pd.DataFrame()
+        zehn = len(self.dfAdresslist) / 10
+        df2 = self.dfAdresslist.sample(round(zehn), axis=0)
+        # iterate throw the 10% selected rows:
+
+        # Dictionary to save the formats
+        Crd1 = None
+        Crd2 = None
+        for index, row in df2.iterrows():
+            if type(row[self.x]) == str:
+                Crd1 = row[self.x].replace(',', '.')
+                Crd1 = float(Crd1)
+            elif type(row[self.x]) == float:
+                Crd1 = row[self.x]
+
+            if type(row[self.y]) == str:
+                Crd2 = row[self.y].replace(',', '.')
+                Crd2 = float(Crd2)
+            elif type(row[self.y]) == float:
+                Crd2 = row[self.y]
+
+            for key, dict2 in Bayern.items():  # the user chooses the Bundesland!!
+                # key is the Format
+                # val is a inside Dict has#
+                if (Crd1 >= float(dict2['Links']) and Crd1 <= float(dict2['Rechts'])) and \
+                        (Crd2 >= float(dict2['Unten']) and Crd2 <= float(dict2['Oben'])):
+                    # if match, the matched coordinates format will saved as a KEY in format dictionary
+                    self.formatsdict[key] = ''  # append
+                    # formatsdict['UTM zn 31N-EPSG:5554 ']=''
+            # save the selected coordinates to be used in Compare with DB
+            self.EstCrd.append(Crd1)
+            self.NrhCrd.append(Crd2)
+
+        # Get the format
+        for k in self.formatsdict.keys():
+            self.final_format = k
+
+        if (len(self.formatsdict) != 1):
+            self.GetDB()
+            """ BUILD CONNECTION with Database """
+        self.Convert()
+        self.ShowonMap()
+
+    def GetDB(self):
+        """COMPARE DISTANCES between POINT AdLs vs. DB"""
+        """If the logic above results two or more potential Formats """
+        DBrow = list()
+        config = {'host': 'mbfd-dev.telekom.de',
+                  'port': '5432',
+                  'database': 'apl_geo',  # apl_geo
+                  'user': 'haddad.mohammad',
+                  'password': 'eu48yiQ5QIVhQBi1y6ilPjNL1SuKYb0c'
+                  }
+        print("Connecting to the Database...")
+        connection = psycopg2.connect(**config)
+        cursor = connection.cursor()
+        # http://initd.org/psycopg/docs/cursor.html
+        # plz = '01819'
+        # sql = "SELECT * FROM kdfm.ags27 WHERE plz = '%s';"
+        sql = "SELECT * FROM kdfm.ags27 WHERE plz in (%s);"
+        cursor.execute(sql % self.plz)
+
+        row2 = cursor.fetchone()  # read only one row
+        if row2:
+            DBrow.append(row2[11])  # long
+            DBrow.append(row2[10])  # lat
+            # print(DBrow)#[9.073903046, 49.998862264]
+        else:
+            print("Data importing was't successful! ")
+        cursor.close()
+        connection.close()
+        """ COMPARE """
+        for format in self.formatsdict.keys():  # for every format compare rows
+            try:
+                for j in range(0, len(self.EstCrd)):
+                    # convert, because distance calculator works only with Dezimal
+                    inProj = Proj(init=format[11:])
+                    outProj = Proj(init='epsg:4326')  # decimal
+
+                    EstCrd2, NrhCrd2 = transform(inProj, outProj, self.EstCrd[j], self.NrhCrd[j])
+
+                    # calculate
+                    # Read Coords from Adressliste (loop)
+                    coords_1 = (NrhCrd2, EstCrd2)
+
+                    # Read Coords from Data(DBdata) (loop)
+                    coords_2 = DBrow
+                    distance = geopy.distance.vincenty(coords_1, coords_2).km
+                    self.formatsdict.update({format: distance})
+            except EnvironmentError as err:
+                print(err)
+                pass
+            # the format with the shortest distance is the right one:
+            self.final_format = min(self.formatsdict.keys(), key=(lambda x: self.formatsdict[x]))
+            print("The used Format is: ", self.final_format)
+        else:
+            print("The used Format is: ", self.final_format)
+
+    def Convert(self):
+        """ After finding the Format, convert east and north columns in Adressliste and save it again """
+        lst1 = list()
+        lst2 = list()
+        EstCrdAll = None
+        NrhCrdAll = None
+
+        for index2, row3 in self.dfAdresslist.iterrows():
+            try:
+                if type(row3[self.x]) == str:
+                    EstCrdAll = row3[self.x].replace(',', '.')
+                    EstCrdAll = float(EstCrdAll)
+                elif type(row3[self.x]) == float:
+                    EstCrdAll = row3[self.x]
+
+                if type(row3[self.y]) == str:
+                    NrhCrdAll = row3[self.y].replace(',', '.')
+                    NrhCrdAll = float(NrhCrdAll)
+                elif type(row3[self.y]) == float:
+                    NrhCrdAll = row3[self.y]
+
+                inProj = Proj(init=self.final_format[11:])
+                outProj = Proj(init='epsg:4326')  # decimal
+                EstCrdAll2, NrhCrdAll2 = transform(inProj, outProj, EstCrdAll, NrhCrdAll)
+
+                lst1.append(EstCrdAll2)
+                lst2.append(NrhCrdAll2)
+            except EnvironmentError as  err:
+                print(err)
+                print("Converting was't successful!")
+        # update coords columns
+        self.dfAdresslist[self.x] = lst1
+        self.dfAdresslist[self.y] = lst2
+
+        self.SaveList()
+
+    def ShowonMap(self):
+        #Create a Shapefile:
+
+        filename = '%userprofile%\\Desktop\\newpoints.shp'
+        filename = os.path.expandvars(filename)
+
+        layerFields = QgsField()
+        cols = list(self.dfAdresslist.columns)
+        for col in cols:
+            layerFields.append(QgsField(col, QVariant.String))
+        writer = QgsVectorFileWriter(filename, 'UTF-8', layerFields, QgsWkbTypes.Point,QgsCoordinateReferenceSystem(self.final_format),'ESRI Shapefile')
+
+        feat = QgsFeature()
+        for index5, row5 in self.dfAdresslist.iterrows():
+            feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(row5[self.x],row5[self.y])))
+            feat.setAttributes([row5[self.plz],row5[self.x],row5[self.y]])
+            writer.addFeature(feat)
+        self.iface.addVectorLayer(filename, '', 'ogr')
+
+        del(writer)
+
+        #included in Run
+
+    def SaveList(self):
+        output = self.dfAdresslist.to_excel("Final_" + self.file)
+        print(self.file, " Saved")
+        """Done"""
+        self.close()
+        # Export memory layer as .xlsx
+        path = QFileDialog.getSaveFileName(None, 'Speichern unter', os.path.join(os.path.dirname(QgsProject.instance().absoluteFilePath()),self.fileName), 'MS Office Open XML Tabelle [XLSX] (*.xlsx *.XLSX)')
+        QgsVectorFileWriter.writeAsVectorFormat(self.layer, path[0], "utf-8", self.layer.crs(), 'xlsx')
+
+    def Cancel(self):
+        """Reject dialog. Called from Cancel button"""
+        QDialog.reject(self)
+
+
+
+
